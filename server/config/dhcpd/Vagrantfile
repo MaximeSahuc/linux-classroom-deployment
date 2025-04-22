@@ -1,0 +1,111 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+    # Configuration du serveur LTSP (Debian 12)
+    config.vm.define "ltsp-server" do |server|
+      server.vm.box = "debian/bookworm64"
+      server.vm.hostname = "ltsp-server"
+      
+      # Première carte réseau pour accès internet (NAT)
+      # Cette interface est automatiquement configurée par Vagrant
+      
+      # Deuxième carte réseau pour réseau interne PXE
+      # Utiliser le même réseau interne "pxe-network" que le client
+      server.vm.network "private_network", ip: "192.168.56.10", virtualbox__intnet: "pxe-network"
+      
+      # Configuration des ressources
+      server.vm.provider "virtualbox" do |vb|
+        vb.memory = "2048"
+        vb.cpus = 2
+        vb.name = "LTSP-Server-Enguerran"
+        
+        # Activer les options de virtualisation nécessaires pour PXE
+        vb.customize ["modifyvm", :id, "--nicpromisc2", "allow-all"]
+      end
+      
+      # Dossier partagé
+      server.vm.synced_folder "./shared", "/vagrant_data", create: true
+      
+      # Provisionnement spécifique pour Enguerran (Networking)
+      server.vm.provision "shell", inline: <<-SHELL
+        apt-get update
+        apt-get install -y vim git curl wget htop net-tools build-essential sudo
+  
+        # Créer un compte pour Enguerran
+        useradd -m -s /bin/bash enguerran || echo "User already exists"
+        echo "enguerran:password" | chpasswd
+        usermod -aG sudo enguerran
+        
+        # Installation des outils nécessaires
+        apt-get install -y dnsmasq tcpdump iptraf-ng syslinux pxelinux
+        
+        # Créer les répertoires nécessaires
+        mkdir -p /home/enguerran/network_configs
+        mkdir -p /srv/tftp/pxelinux.cfg
+        chown -R enguerran:enguerran /home/enguerran/network_configs
+        chown -R enguerran:enguerran /srv/tftp
+        
+        # Copier les fichiers d'amorçage PXE
+        cp /usr/lib/PXELINUX/pxelinux.0 /srv/tftp/
+        cp /usr/lib/syslinux/modules/bios/*.c32 /srv/tftp/
+        
+        # Créer une configuration PXE minimale
+        cat > /srv/tftp/pxelinux.cfg/default <<EOF
+DEFAULT menu.c32
+PROMPT 0
+TIMEOUT 300
+ONTIMEOUT local
+
+MENU TITLE PXE Boot Menu
+
+LABEL local
+  MENU LABEL Boot from local disk
+  LOCALBOOT 0
+EOF
+        
+        # Configuration de dnsmasq pour DHCP et TFTP (PXE)
+        cat > /etc/dnsmasq.conf <<EOF
+# Interface d'écoute (eth1 est l'interface pour le réseau interne)
+interface=eth1
+bind-interfaces
+
+# Configuration DHCP
+dhcp-range=192.168.56.50,192.168.56.200,12h
+dhcp-option=option:router,192.168.56.10
+dhcp-option=option:dns-server,8.8.8.8,8.8.4.4
+
+# Configuration PXE
+enable-tftp
+tftp-root=/srv/tftp
+dhcp-boot=pxelinux.0,ltsp-server,192.168.56.10
+
+# Journalisation
+log-queries
+log-dhcp
+EOF
+  
+        # Configuration pour activer le routage
+        echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-ip-forward.conf
+        sysctl -p /etc/sysctl.d/99-ip-forward.conf
+        
+        # Configuration NAT pour permettre aux clients d'accéder à internet
+        iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+        
+        # S'assurer que les services sont bien configurés
+        systemctl stop dnsmasq
+        systemctl start dnsmasq
+        systemctl enable dnsmasq
+        
+        # Vérifier que dnsmasq est bien en cours d'exécution
+        systemctl status dnsmasq
+        ip addr show eth1
+        
+        echo "================================================"
+        echo "Configuration réseau pour Enguerran terminée!"
+        echo "dnsmasq configuré pour DHCP et TFTP (PXE boot)."
+        echo "IP du serveur sur le réseau PXE: 192.168.56.10"
+        echo "================================================"
+      SHELL
+    end
+end
