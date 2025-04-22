@@ -1,0 +1,25 @@
+dn: uid=jean, ou=Users, dc=meg, dc=corp
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+cn: Jean Culky
+sn: Culky
+uid: jean
+uidNumber: 20001
+gidNumber: 10000
+homeDirectory: /home/jean
+loginShell: /bin/bash
+userPassword:{SSHA}WLjjN5w0pxiSGLF0Vle47H0UlLgyIj+e
+
+dn: uid=mag, ou=Users, dc=meg, dc=corp
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+cn: Mag Rosbit
+sn: Rosbit
+uid: mag
+uidNumber: 20002
+gidNumber: 10000
+homeDirectory: /home/mag
+loginShell: /bin/bash
+userPassword:{SSHA}liL1NOmqZBZuBDcw6egfdydyAzC725wd

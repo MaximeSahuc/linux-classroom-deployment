@@ -1,0 +1,5 @@
+dn: cn=students, ou=Groups, dc=meg, dc=corp
+objectClass: top
+objectClass: posixGroup
+cn: Students
+gidNumber: 10000
