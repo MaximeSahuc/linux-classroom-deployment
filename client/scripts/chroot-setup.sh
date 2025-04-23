@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/chroot-setup.sh - Sets up the system inside the chroot with non-interactive configuration
+# scripts/chroot-setup.sh - Sets up the system inside the chroot with proper boot configuration
 
 set -e
 
@@ -83,12 +83,44 @@ usermod -aG sudo ltsp-user
 # Update initramfs
 update-initramfs -u
 
-# Install GRUB for EFI boot (preferred for LTSP)
+# Read the loop device name passed from the build script
+LOOP_DEVICE=$(cat /loop_device_info)
+DISK_DEVICE=$(echo $LOOP_DEVICE | sed 's/\/dev\///')
+
+# Install both GRUB for BIOS and EFI for maximum compatibility
+echo "Installing GRUB for BIOS and EFI boot..."
+
+# Install for BIOS boot
+apt-get install -y --no-install-recommends grub-pc
+grub-install --target=i386-pc --boot-directory=/boot --recheck "${LOOP_DEVICE}"
+
+# Install for EFI boot
 apt-get install -y --no-install-recommends grub-efi-amd64
-grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=debian --no-nvram
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --boot-directory=/boot --bootloader-id=debian --no-nvram --recheck
+
+# Update GRUB configuration with correct parameters for VirtualBox
+cat > /etc/default/grub << ENDGRUB
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Debian`
+GRUB_CMDLINE_LINUX_DEFAULT="quiet"
+GRUB_CMDLINE_LINUX=""
+GRUB_TERMINAL=console
+# Disable os-prober to avoid warnings
+GRUB_DISABLE_OS_PROBER=true
+ENDGRUB
 
 # Update GRUB configuration
 update-grub
+
+# Create a script to configure VirtualBox guest additions (for better performance)
+cat > /etc/kernel/postinst.d/vbox-update-x11 << ENDVBOX
+#!/bin/sh
+if [ -x /usr/bin/update-desktop-database ]; then
+    update-desktop-database -q
+fi
+ENDVBOX
+chmod +x /etc/kernel/postinst.d/vbox-update-x11
 
 # Enable SSH access
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
@@ -103,11 +135,6 @@ dhcp=internal
 [ifupdown]
 managed=true
 ENDNM
-
-# Add firmware for Realtek adapters
-mkdir -p /lib/firmware/rtl_nic/
-# Note: In a production environment, you would download the actual firmware files
-# This is just to prevent the warnings during image build
 
 # Disable unnecessary services
 systemctl disable ModemManager.service || true
