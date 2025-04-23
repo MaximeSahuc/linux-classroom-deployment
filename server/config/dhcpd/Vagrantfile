@@ -2,70 +2,106 @@
 # vi: set ft=ruby :
 
 Vagrant.configure("2") do |config|
-    # Configuration du serveur LTSP (Debian 12)
-    config.vm.define "ltsp-server" do |server|
-      server.vm.box = "debian/bookworm64"
-      server.vm.hostname = "ltsp-server"
+  # Configuration du serveur LTSP (Debian 12)
+  config.vm.define "ltsp-server" do |server|
+    server.vm.box = "debian/bookworm64"
+    server.vm.hostname = "ltsp-server"
+    
+    # Première carte réseau pour accès internet (NAT)
+    # Cette interface est automatiquement configurée par Vagrant
+    
+    # Deuxième carte réseau pour réseau interne PXE
+    server.vm.network "private_network", ip: "192.168.56.10", virtualbox__intnet: "pxe-network"
+    
+    # Configuration des ressources
+    server.vm.provider "virtualbox" do |vb|
+      vb.memory = "2048"
+      vb.cpus = 2
+      vb.name = "LTSP-Server-Enguerran"
       
-      # Première carte réseau pour accès internet (NAT)
-      # Cette interface est automatiquement configurée par Vagrant
+      # Activer les options de virtualisation nécessaires pour PXE
+      vb.customize ["modifyvm", :id, "--nicpromisc2", "allow-all"]
+    end
+    
+    # Dossier partagé
+    server.vm.synced_folder "./shared", "/vagrant_data", create: true
+
+    
+    # Provisionnement spécifique pour Enguerran (Networking)
+    server.vm.provision "shell", inline: <<-SHELL
+      apt-get update
+      apt-get install -y vim git curl wget htop net-tools build-essential sudo
+
+      # Créer un compte pour Enguerran
+      useradd -m -s /bin/bash enguerran || echo "User already exists"
+      echo "enguerran:password" | chpasswd
+      usermod -aG sudo enguerran
       
-      # Deuxième carte réseau pour réseau interne PXE
-      # Utiliser le même réseau interne "pxe-network" que le client
-      server.vm.network "private_network", ip: "192.168.56.10", virtualbox__intnet: "pxe-network"
+      # Installation des outils nécessaires
+      apt-get install -y dnsmasq tcpdump iptraf-ng syslinux pxelinux p7zip-full
       
-      # Configuration des ressources
-      server.vm.provider "virtualbox" do |vb|
-        vb.memory = "2048"
-        vb.cpus = 2
-        vb.name = "LTSP-Server-Enguerran"
-        
-        # Activer les options de virtualisation nécessaires pour PXE
-        vb.customize ["modifyvm", :id, "--nicpromisc2", "allow-all"]
-      end
+      # Créer les répertoires nécessaires
+      mkdir -p /home/enguerran/network_configs
+      mkdir -p /srv/tftp/pxelinux.cfg
+      mkdir -p /srv/tftp/images
+      mkdir -p /srv/tftp/debian
+      chown -R enguerran:enguerran /home/enguerran/network_configs
+      chown -R enguerran:enguerran /srv/tftp
       
-      # Dossier partagé
-      server.vm.synced_folder "./shared", "/vagrant_data", create: true
+      # Copier les fichiers d'amorçage PXE
+      cp /usr/lib/PXELINUX/pxelinux.0 /srv/tftp/
+      cp /usr/lib/syslinux/modules/bios/*.c32 /srv/tftp/
       
-      # Provisionnement spécifique pour Enguerran (Networking)
-      server.vm.provision "shell", inline: <<-SHELL
-        apt-get update
-        apt-get install -y vim git curl wget htop net-tools build-essential sudo
-  
-        # Créer un compte pour Enguerran
-        useradd -m -s /bin/bash enguerran || echo "User already exists"
-        echo "enguerran:password" | chpasswd
-        usermod -aG sudo enguerran
-        
-        # Installation des outils nécessaires
-        apt-get install -y dnsmasq tcpdump iptraf-ng syslinux pxelinux
-        
-        # Créer les répertoires nécessaires
-        mkdir -p /home/enguerran/network_configs
-        mkdir -p /srv/tftp/pxelinux.cfg
-        chown -R enguerran:enguerran /home/enguerran/network_configs
-        chown -R enguerran:enguerran /srv/tftp
-        
-        # Copier les fichiers d'amorçage PXE
-        cp /usr/lib/PXELINUX/pxelinux.0 /srv/tftp/
-        cp /usr/lib/syslinux/modules/bios/*.c32 /srv/tftp/
-        
-        # Créer une configuration PXE minimale
-        cat > /srv/tftp/pxelinux.cfg/default <<EOF
+      # Télécharger l'ISO Debian netinst
+      if [ ! -f /srv/tftp/images/debian.iso ]; then
+        wget https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.10.0-amd64-netinst.iso -O /srv/tftp/images/debian.iso
+      fi
+      
+      # Extraire les fichiers nécessaires de l'ISO
+      mkdir -p /tmp/iso-extract
+      7z x /srv/tftp/images/debian.iso -o/tmp/iso-extract
+      
+      # Chercher et copier les fichiers d'amorçage
+      VMLINUZ_PATH=$(find /tmp/iso-extract -name "vmlinuz" | head -1)
+      INITRD_PATH=$(find /tmp/iso-extract -name "initrd.gz" | head -1)
+      
+      if [ -n "$VMLINUZ_PATH" ] && [ -n "$INITRD_PATH" ]; then
+        cp "$VMLINUZ_PATH" /srv/tftp/debian/
+        cp "$INITRD_PATH" /srv/tftp/debian/
+        chmod 644 /srv/tftp/debian/*
+        echo "Fichiers d'amorçage copiés avec succès"
+      else
+        # Alternative: chercher avec des patterns plus spécifiques
+        find /tmp/iso-extract -path "*/install*/vmlinuz" -exec cp {} /srv/tftp/debian/ \;
+        find /tmp/iso-extract -path "*/install*/initrd.gz" -exec cp {} /srv/tftp/debian/ \;
+        chmod 644 /srv/tftp/debian/*
+        echo "Recherche alternative des fichiers d'amorçage terminée"
+      fi
+      
+      # Nettoyer
+      rm -rf /tmp/iso-extract
+      
+      # Créer une configuration PXE pour Debian
+      cat > /srv/tftp/pxelinux.cfg/default <<EOF
 DEFAULT menu.c32
 PROMPT 0
-TIMEOUT 300
-ONTIMEOUT local
+TIMEOUT 100
+ONTIMEOUT debian
 
 MENU TITLE PXE Boot Menu
 
+LABEL debian
+MENU LABEL Install Debian
+KERNEL debian/vmlinuz
+APPEND initrd=debian/initrd.gz ip=dhcp
+
 LABEL local
-  MENU LABEL Boot from local disk
-  LOCALBOOT 0
+MENU LABEL Boot from local disk
+LOCALBOOT 0
 EOF
-        
-        # Configuration de dnsmasq pour DHCP et TFTP (PXE)
-        cat > /etc/dnsmasq.conf <<EOF
+      
+      # Configuration de dnsmasq pour DHCP et TFTP (PXE)
+      cat > /etc/dnsmasq.conf <<EOF
 # Interface d'écoute (eth1 est l'interface pour le réseau interne)
 interface=eth1
 bind-interfaces
@@ -83,29 +119,37 @@ dhcp-boot=pxelinux.0,ltsp-server,192.168.56.10
 # Journalisation
 log-queries
 log-dhcp
+log-debug
 EOF
-  
-        # Configuration pour activer le routage
-        echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-ip-forward.conf
-        sysctl -p /etc/sysctl.d/99-ip-forward.conf
-        
-        # Configuration NAT pour permettre aux clients d'accéder à internet
-        iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-        
-        # S'assurer que les services sont bien configurés
-        systemctl stop dnsmasq
-        systemctl start dnsmasq
-        systemctl enable dnsmasq
-        
-        # Vérifier que dnsmasq est bien en cours d'exécution
-        systemctl status dnsmasq
-        ip addr show eth1
-        
-        echo "================================================"
-        echo "Configuration réseau pour Enguerran terminée!"
-        echo "dnsmasq configuré pour DHCP et TFTP (PXE boot)."
-        echo "IP du serveur sur le réseau PXE: 192.168.56.10"
-        echo "================================================"
-      SHELL
-    end
+
+      # Configuration pour activer le routage
+      echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-ip-forward.conf
+      sysctl -p /etc/sysctl.d/99-ip-forward.conf
+      
+      # Configuration NAT pour permettre aux clients d'accéder à internet
+      iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      
+      # S'assurer que les services sont bien configurés
+      systemctl stop dnsmasq
+      systemctl start dnsmasq
+      systemctl enable dnsmasq
+      
+      # Vérifier que dnsmasq est bien en cours d'exécution
+      systemctl status dnsmasq
+      ip addr show eth1
+      
+      # Afficher les fichiers d'amorçage présents
+      echo "Contenu du répertoire PXE /srv/tftp/debian:"
+      ls -la /srv/tftp/debian/
+      
+      echo "================================================"
+      echo "Configuration réseau pour Enguerran terminée!"
+      echo "dnsmasq configuré pour DHCP et TFTP (PXE boot)."
+      echo "IP du serveur sur le réseau PXE: 192.168.56.10"
+      echo "------------------------------------------------"
+      echo "Fichiers PXE installés:"
+      find /srv/tftp -type f | grep -v images | sort
+      echo "================================================"
+    SHELL
+  end
 end
