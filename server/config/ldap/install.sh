@@ -20,7 +20,7 @@ echo "slapd slapd/move_old_database boolean true" | debconf-set-selections
 
 sudo DEBIAN_FRONTEND=noninteractive apt install -y slapd ldap-utils
 
-ldapadd -x -D "cn=admin,$BASEDN" -W -f base.ldif
-ldapadd -x -D "cn=admin,$BASEDN" -W -f users.ldif
-ldapadd -x -D "cn=admin,$BASEDN" -W -f groups.ldif
+ldapadd -x -D "cn=admin,$BASEDN" -w "$ADMINPW" -f base.ldif
+ldapadd -x -D "cn=admin,$BASEDN" -w "$ADMINPW" -f users.ldif
+ldapadd -x -D "cn=admin,$BASEDN" -w "$ADMINPW" -f groups.ldif
 
