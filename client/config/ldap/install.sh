@@ -1,7 +1,7 @@
 #!usr/bin/bash
 
 # Variables LDAP (à personnaliser)
-LDAP_SERVER="ldap://192.168.1.1"
+LDAP_SERVER="ldap://192.168.0.5"
 BASE_DN="dc=meg,dc=corp"
 LDAP_BINDDN="cn=admin,dc=meg,dc=corp"
 LDAP_PASSWORD="admin"
