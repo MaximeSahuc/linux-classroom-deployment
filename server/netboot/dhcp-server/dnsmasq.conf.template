@@ -1,0 +1,19 @@
+# /etc/dnsmasq.conf
+# Set the DHCP Range and lease time
+dhcp-range=192.168.0.100,192.168.0.200,255.255.255.0,12h
+# Set the default gateway
+dhcp-option=option:router,192.168.0.254
+# Set tne DNS servers
+dhcp-option=option:dns-server,8.8.8.8,8.8.4.4
+# Standard PC BIOS
+dhcp-match=set:bios,60,PXEClient:Arch:00000
+dhcp-boot=tag:bios,netboot.xyz.kpxe,,SERVER_IP_ADDRESS
+# 64-bit x86 EFI
+dhcp-match=set:efi64,60,PXEClient:Arch:00007
+dhcp-boot=tag:efi64,netboot.xyz.efi,,SERVER_IP_ADDRESS
+# 64-bit x86 EFI (obsolete)
+dhcp-match=set:efi64-2,60,PXEClient:Arch:00009
+dhcp-boot=tag:efi64-2,netboot.xyz.efi,,SERVER_IP_ADDRESS
+# 64-bit UEFI for arm64
+dhcp-match=set:efi64-3,60,PXEClient:Arch:0000B
+dhcp-boot=tag:efi64-3,netboot.xyz-arm64.efi,,SERVER_IP_ADDRESS

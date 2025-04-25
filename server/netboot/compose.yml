@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  netbootxyz:
+    image: ghcr.io/netbootxyz/netbootxyz
+    container_name: netbootxyz
+    environment:
+      - MENU_VERSION=2.0.84
+      - NGINX_PORT=80
+      - WEB_APP_PORT=3000
+    ports:
+      - "3000:3000"       # Web configuration interface
+      - "69:69/udp"       # TFTP port
+      - "8080:80"         # HTTP port
+    volumes:
+      - ./config:/config
+      - ./assets:/assets
+    restart: unless-stopped
+
+  dhcp-server:
+    build:
+      context: ./dhcp-server
+      dockerfile: Dockerfile
+    container_name: dhcp-server
+    environment:
+      - SERVER_IP_ADDRESS=192.168.0.5
+    ports:
+      - "67:67/udp"       # DHCP port
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN        # Required for DHCP server functionality
+    depends_on:
+      - netbootxyz
