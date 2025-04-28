@@ -26,4 +26,5 @@ systemctl enable nscd
 systemctl restart nscd
 
 
+sudo sed -i 's/\bsystemd\b/ldap/g' /etc/nsswitch.conf
 sudo echo "session required pam_mkhomedir.so skel=/etc/skel umask=0022" >> /etc/pam.d/common-session
