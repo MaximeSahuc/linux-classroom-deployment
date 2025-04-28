@@ -19,8 +19,8 @@ echo "libnss-ldap        libnss-ldap/rootbindpw password $LDAP_PASSWORD" | debco
 echo "libpam-ldap        libpam-ldap/rootbindpw password $LDAP_PASSWORD" | debconf-set-selections
 
 export DEBIAN_FRONTEND=noninteractive
-sudo apt update -y
-sudo apt install -y libnss-ldap libpam-ldap ldap-utils nscd
+sudo apt update
+sudo apt install -yy libnss-ldap libpam-ldap ldap-utils nscd
 
 systemctl enable nscd
 systemctl restart nscd
